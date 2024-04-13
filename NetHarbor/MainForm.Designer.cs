@@ -32,10 +32,13 @@
             this.StatStrip = new System.Windows.Forms.StatusStrip();
             this.CaptureStatLabel = new System.Windows.Forms.ToolStripStatusLabel();
             this.toolStripStatusLabel2 = new System.Windows.Forms.ToolStripStatusLabel();
+            this.InfoLabel = new System.Windows.Forms.ToolStripStatusLabel();
             this.SideMenu = new System.Windows.Forms.ToolStrip();
             this.StartCaptureButton = new System.Windows.Forms.ToolStripButton();
             this.StopCaptureButton = new System.Windows.Forms.ToolStripButton();
             this.ExitButton = new System.Windows.Forms.ToolStripButton();
+            this.toolStripSeparator1 = new System.Windows.Forms.ToolStripSeparator();
+            this.OpenPCAPButton = new System.Windows.Forms.ToolStripButton();
             this.panel1 = new System.Windows.Forms.Panel();
             this.CaptureFilterTextbox = new System.Windows.Forms.TextBox();
             this.label2 = new System.Windows.Forms.Label();
@@ -51,7 +54,6 @@
             this.detailTreeview = new System.Windows.Forms.TreeView();
             this.hexRichTextbox = new System.Windows.Forms.RichTextBox();
             this.FlushUITimer = new System.Windows.Forms.Timer(this.components);
-            this.InfoLabel = new System.Windows.Forms.ToolStripStatusLabel();
             this.StatStrip.SuspendLayout();
             this.SideMenu.SuspendLayout();
             this.panel1.SuspendLayout();
@@ -74,23 +76,29 @@
             this.CaptureStatLabel,
             this.toolStripStatusLabel2,
             this.InfoLabel});
-            this.StatStrip.Location = new System.Drawing.Point(0, 730);
+            this.StatStrip.Location = new System.Drawing.Point(0, 735);
             this.StatStrip.Name = "StatStrip";
-            this.StatStrip.Size = new System.Drawing.Size(1231, 31);
+            this.StatStrip.Size = new System.Drawing.Size(1231, 26);
             this.StatStrip.TabIndex = 1;
             this.StatStrip.Text = "statusStrip1";
             // 
             // CaptureStatLabel
             // 
             this.CaptureStatLabel.Name = "CaptureStatLabel";
-            this.CaptureStatLabel.Size = new System.Drawing.Size(159, 24);
+            this.CaptureStatLabel.Size = new System.Drawing.Size(135, 20);
             this.CaptureStatLabel.Text = "CaptureStatLabel";
             // 
             // toolStripStatusLabel2
             // 
             this.toolStripStatusLabel2.Name = "toolStripStatusLabel2";
-            this.toolStripStatusLabel2.Size = new System.Drawing.Size(922, 24);
+            this.toolStripStatusLabel2.Size = new System.Drawing.Size(1005, 20);
             this.toolStripStatusLabel2.Spring = true;
+            // 
+            // InfoLabel
+            // 
+            this.InfoLabel.Name = "InfoLabel";
+            this.InfoLabel.Size = new System.Drawing.Size(76, 20);
+            this.InfoLabel.Text = "InfoLabel";
             // 
             // SideMenu
             // 
@@ -99,7 +107,9 @@
             this.SideMenu.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
             this.StartCaptureButton,
             this.StopCaptureButton,
-            this.ExitButton});
+            this.ExitButton,
+            this.toolStripSeparator1,
+            this.OpenPCAPButton});
             this.SideMenu.Location = new System.Drawing.Point(0, 0);
             this.SideMenu.Name = "SideMenu";
             this.SideMenu.Size = new System.Drawing.Size(1231, 72);
@@ -111,7 +121,7 @@
             this.StartCaptureButton.Image = global::NetHarbor.Properties.Resources.play_fill;
             this.StartCaptureButton.ImageTransparentColor = System.Drawing.Color.Magenta;
             this.StartCaptureButton.Name = "StartCaptureButton";
-            this.StartCaptureButton.Size = new System.Drawing.Size(86, 67);
+            this.StartCaptureButton.Size = new System.Drawing.Size(73, 69);
             this.StartCaptureButton.Text = "开始捕获";
             this.StartCaptureButton.TextImageRelation = System.Windows.Forms.TextImageRelation.ImageAboveText;
             this.StartCaptureButton.Click += new System.EventHandler(this.StartCaptureButton_Click);
@@ -121,7 +131,7 @@
             this.StopCaptureButton.Image = global::NetHarbor.Properties.Resources.stop_fill;
             this.StopCaptureButton.ImageTransparentColor = System.Drawing.Color.Magenta;
             this.StopCaptureButton.Name = "StopCaptureButton";
-            this.StopCaptureButton.Size = new System.Drawing.Size(86, 67);
+            this.StopCaptureButton.Size = new System.Drawing.Size(73, 69);
             this.StopCaptureButton.Text = "停止捕获";
             this.StopCaptureButton.TextImageRelation = System.Windows.Forms.TextImageRelation.ImageAboveText;
             this.StopCaptureButton.Click += new System.EventHandler(this.StopCaptureButton_Click);
@@ -132,10 +142,25 @@
             this.ExitButton.Image = global::NetHarbor.Properties.Resources.close_fill;
             this.ExitButton.ImageTransparentColor = System.Drawing.Color.Magenta;
             this.ExitButton.Name = "ExitButton";
-            this.ExitButton.Size = new System.Drawing.Size(86, 67);
+            this.ExitButton.Size = new System.Drawing.Size(73, 69);
             this.ExitButton.Text = "退出程序";
             this.ExitButton.TextImageRelation = System.Windows.Forms.TextImageRelation.ImageAboveText;
             this.ExitButton.Click += new System.EventHandler(this.ExitButton_Click);
+            // 
+            // toolStripSeparator1
+            // 
+            this.toolStripSeparator1.Name = "toolStripSeparator1";
+            this.toolStripSeparator1.Size = new System.Drawing.Size(6, 72);
+            // 
+            // OpenPCAPButton
+            // 
+            this.OpenPCAPButton.Image = global::NetHarbor.Properties.Resources.stop_fill;
+            this.OpenPCAPButton.ImageTransparentColor = System.Drawing.Color.Magenta;
+            this.OpenPCAPButton.Name = "OpenPCAPButton";
+            this.OpenPCAPButton.Size = new System.Drawing.Size(82, 69);
+            this.OpenPCAPButton.Text = "打开PCAP";
+            this.OpenPCAPButton.TextImageRelation = System.Windows.Forms.TextImageRelation.ImageAboveText;
+            this.OpenPCAPButton.Click += new System.EventHandler(this.OpenPCAPButton_Click);
             // 
             // panel1
             // 
@@ -170,7 +195,7 @@
             this.PromiscuousCheck.CheckState = System.Windows.Forms.CheckState.Checked;
             this.PromiscuousCheck.Location = new System.Drawing.Point(1244, 8);
             this.PromiscuousCheck.Name = "PromiscuousCheck";
-            this.PromiscuousCheck.Size = new System.Drawing.Size(93, 21);
+            this.PromiscuousCheck.Size = new System.Drawing.Size(89, 19);
             this.PromiscuousCheck.TabIndex = 3;
             this.PromiscuousCheck.Text = "混杂模式";
             this.PromiscuousCheck.UseVisualStyleBackColor = true;
@@ -181,7 +206,7 @@
             this.label1.Font = new System.Drawing.Font("宋体", 9F);
             this.label1.Location = new System.Drawing.Point(17, 10);
             this.label1.Name = "label1";
-            this.label1.Size = new System.Drawing.Size(80, 18);
+            this.label1.Size = new System.Drawing.Size(67, 15);
             this.label1.TabIndex = 0;
             this.label1.Text = "网络接口";
             // 
@@ -220,7 +245,7 @@
             this.tableLayoutPanel1.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 40F));
             this.tableLayoutPanel1.RowStyles.Add(new System.Windows.Forms.RowStyle());
             this.tableLayoutPanel1.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 20F));
-            this.tableLayoutPanel1.Size = new System.Drawing.Size(1231, 658);
+            this.tableLayoutPanel1.Size = new System.Drawing.Size(1231, 663);
             this.tableLayoutPanel1.TabIndex = 6;
             // 
             // panel2
@@ -304,12 +329,6 @@
             // 
             this.FlushUITimer.Tick += new System.EventHandler(this.FlushUITimer_Tick);
             // 
-            // InfoLabel
-            // 
-            this.InfoLabel.Name = "InfoLabel";
-            this.InfoLabel.Size = new System.Drawing.Size(89, 24);
-            this.InfoLabel.Text = "InfoLabel";
-            // 
             // MainForm
             // 
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.None;
@@ -368,6 +387,8 @@
         private System.Windows.Forms.RichTextBox hexRichTextbox;
         private System.Windows.Forms.TreeView detailTreeview;
         private System.Windows.Forms.ToolStripStatusLabel InfoLabel;
+        private System.Windows.Forms.ToolStripSeparator toolStripSeparator1;
+        private System.Windows.Forms.ToolStripButton OpenPCAPButton;
     }
 }
 

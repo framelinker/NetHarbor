@@ -111,6 +111,48 @@ namespace NetHarbor.PacketParser
             return result;
         }
 
+        // 三字节大端字节指针转小端int64
+        public unsafe static int ThreeBytesNetworkPtrToInt(byte* pointer, int startFrom)
+        {
+            byte[] result = new byte[4];
+            for (int i = 0; i < 3; i++)
+            {
+                result[2 - i] = pointer[startFrom + i];
+            }
+            return BitConverter.ToInt32(result, 0);
+        }
+
+        public unsafe static ushort ReadUshortFromPtr(byte* pointer)
+        {
+            ushort* tempPtr = (ushort*)pointer;
+            ushort res = (*tempPtr);
+            return res;
+        }
+
+        public unsafe static ushort ReadUshortFromPtrAndToHostEndian(byte* pointer)
+        {
+            ushort* tempPtr = (ushort*)pointer;
+            ushort res = Tools.NetworkToHost(*tempPtr);
+            return res;
+        }
+
+        public unsafe static uint ReadUintFromPtrAndToHostEndian(byte* pointer)
+        {
+            uint* tempPtr = (uint*)pointer;
+            uint res = Tools.NetworkToHost(*tempPtr);
+            return res;
+        }
+
+        public static string ConvertBytesArrayToHex(byte[] bytesArray)
+        {
+            StringBuilder hexBuilder = new StringBuilder();
+            foreach(byte b in bytesArray)
+            {
+                hexBuilder.Append(b.ToString("X2"));
+            }
+            return hexBuilder.ToString();
+        }
+
         /*public static int NetworkToHost(int number)
         {
             if (BitConverter.IsLittleEndian)

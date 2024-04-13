@@ -106,4 +106,19 @@ namespace NetHarbor.PacketParser
         public ushort authority;      // Authority RRs [2 byte]
         public ushort additional;     // Additional RRs [2 byte]
     }
+
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    public unsafe struct TLSHeader
+    {
+        public byte recordType;
+        public ushort version;
+        public ushort length;
+    }
+
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    public unsafe struct TLSHandshakeHeader
+    {
+        public byte type;
+        public fixed byte length[3];
+    }
 }

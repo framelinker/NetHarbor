@@ -73,6 +73,7 @@
     <Compile Include="DetailedParser.cs" />
     <Compile Include="HeuristicJudger.cs" />
     <Compile Include="PacketWrapper.cs" />
+    <Compile Include="Parser.cs" />
     <Compile Include="Protocol.cs" />
     <Compile Include="ProtocolHeader.cs" />
     <Compile Include="RoughParser.cs" />
@@ -83,5 +84,6 @@
     <None Include="app.config" />
     <None Include="packages.config" />
   </ItemGroup>
+  <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

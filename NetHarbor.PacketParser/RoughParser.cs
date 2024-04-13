@@ -1,4 +1,5 @@
 ﻿using PacketDotNet;
+using PacketDotNet.Lldp;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -8,6 +9,8 @@ using System.Net.Mime;
 using System.Net.NetworkInformation;
 using System.Text;
 using System.Threading.Tasks;
+using System.Windows.Forms;
+using System.Xml.Linq;
 
 namespace NetHarbor.PacketParser
 {
@@ -239,26 +242,116 @@ namespace NetHarbor.PacketParser
                         pkt.ApplicationLayerProtocol = ApplicationLayerProtocol.TLS;
                         pkt.TopProtocol = pkt.ApplicationLayerProtocol.ToString();
 
-                        byte contentType = *ptr;
-                        ptr++;
-                        ushort* pointer = (ushort*)ptr;
-                        ushort version = Tools.NetworkToHost(*pointer);
-                        
-                        ptr += sizeof(ushort);
-                        pointer++;
-                        ushort length = Tools.NetworkToHost(*pointer);
-                        ptr += sizeof(ushort);
-
-                        pkt.TopInfo = ProtocolVariable.GetTlsVersion(version) + " ";
-                        pkt.TopInfo += ProtocolVariable.GetTlsContentType(contentType) + " ";
-                        switch (contentType)
+                        bool firstTls = true;
+                        int totalLength = pkt.TransmissionLayerPayloadLength;
+                        while (totalLength > 0)
                         {
-                            case 22:
-                                // Handshake, 读取handshake状态
-                                byte handshakeType = *ptr;
-                                ptr += 4;  // 跳过length
-                                pkt.TopInfo += ProtocolVariable.GetTlsHandshakeType(handshakeType) + " ";
-                                break;
+                            TLSHeader tls = *(TLSHeader*)ptr;
+                            ptr += sizeof(TLSHeader);
+                            ushort version = Tools.NetworkToHost(tls.version);
+                            ushort length = Tools.NetworkToHost(tls.length);
+
+                            if (firstTls)
+                            {
+                                pkt.TopInfo = ProtocolVariable.GetTlsVersion(version) + " ";
+                                firstTls = false;
+                            }
+                            else
+                            {
+                                pkt.TopInfo += ", ";
+                            }
+
+                            switch (tls.recordType)
+                            {
+                                case 22:
+                                    //Handshake
+                                    TLSHandshakeHeader tlsHandshakeHeader = *(TLSHandshakeHeader*)ptr;
+                                    ptr += sizeof(TLSHandshakeHeader);
+                                    int handshakeLength = Tools.ThreeBytesNetworkPtrToInt(tlsHandshakeHeader.length, 0);
+                                    switch (tlsHandshakeHeader.type)
+                                    {
+                                        case 1:
+                                            //Client Hello, 读取SNI
+                                            pkt.TopInfo += "Client Hello";
+                                            //跳过2B Version, 32B Random
+                                            ptr += 34;
+                                            //读取sessionID Length并跳过
+                                            byte sessionIDLength = *ptr;
+                                            ptr += (sessionIDLength + 1);
+                                            // 读取Cipher Suites Length并跳过
+                                            ushort cipherSuitesLength = Tools.ReadUshortFromPtrAndToHostEndian(ptr);
+                                            ptr += (cipherSuitesLength + 2);
+                                            // 读取Compression Methods Length并跳过
+                                            byte compressionMethodsLength = *ptr;
+                                            ptr += (compressionMethodsLength + 1);
+                                            // 所有Extensions的Length
+                                            ushort extensionsLength = Tools.ReadUshortFromPtrAndToHostEndian(ptr);
+                                            ptr += 2;
+                                            // 逐个读取Extension
+                                            int remainExtensionsLength = extensionsLength;
+                                            while (remainExtensionsLength > 0)
+                                            {
+                                                // 单个的Extension
+                                                // Extension Type
+                                                ushort singleExtensionType = Tools.ReadUshortFromPtrAndToHostEndian(ptr);
+                                                ptr += 2;
+                                                remainExtensionsLength -= 2;
+                                                // Extension Length
+                                                ushort singleExtensionLength = Tools.ReadUshortFromPtrAndToHostEndian(ptr);
+                                                ptr += 2;
+                                                remainExtensionsLength -= 2;
+                                                // 如果不是server_name就跳过, 是就读取
+                                                if (singleExtensionLength > 0)
+                                                {
+                                                    if (singleExtensionType == 0)
+                                                    {
+                                                        // 是server_name
+                                                        // 只读第一个SNI
+                                                        ushort nameLength = Tools.ReadUshortFromPtrAndToHostEndian(ptr + 3);
+                                                        if (nameLength > 0)
+                                                        {
+                                                            byte[] name = Tools.CopyFromPointer(ptr, 5, nameLength);
+                                                            pkt.TopInfo += string.Format(" (SNI={0})", Encoding.UTF8.GetString(name));
+                                                        }
+                                                        // 跳过剩余部分
+                                                        ptr += singleExtensionLength;
+                                                    }
+                                                    else
+                                                    {
+                                                        // 非server_name, 跳过本部分Extensions
+                                                        ptr += singleExtensionLength;
+                                                    }
+                                                }
+                                                // 解析后要记得减去长度, 否则死循环
+                                                remainExtensionsLength -= singleExtensionLength;
+                                            }
+                                            break;
+                                        default:
+                                            // 未知/其他Handshake
+                                            // 加入信息
+                                            if (ProtocolVariable.GetTlsHandshakeType(tlsHandshakeHeader.type).Length <= 0)
+                                            {
+                                                pkt.TopInfo += "UNKNOWN(MAYBE Encrypted Handshake Msg)";
+                                            }
+                                            else
+                                            {
+                                                pkt.TopInfo += ProtocolVariable.GetTlsHandshakeType(tlsHandshakeHeader.type);
+                                            }
+                                            // 指针跳过这部分不解析的区域
+                                            ptr += handshakeLength;
+                                            break;
+                                    }
+                                    break;
+                                default:
+                                    pkt.TopInfo += ProtocolVariable.GetTlsRecordType(tls.recordType);
+                                    // 指针跳过这部分不解析的区域
+                                    ptr += length;
+                                    break;
+                            }
+                            // 扣减掉本部分header与length后继续读取
+                            totalLength -= sizeof(TLSHeader);
+                            totalLength -= length;
+
                         }
                     }
                     else if(HeuristicJudger.IsHttpProtocol(ptr))

@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
 using System.Drawing;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -103,15 +104,26 @@ namespace NetHarbor
         private List<PacketWrapper> packetList;
         private List<PacketWrapper> readList;
 
-        private void StartCapture(int interfaceIndex, bool promiscuousMode, string filter)
+        // 新的session前需要安全地清除全局变量、GUI界面包ListView以及暂存的packetList.
+        private void SafelyClearPackets()
         {
-            device = LibPcapLiveDeviceList.Instance[interfaceIndex];
-            // device = CaptureDeviceList.Instance[interfaceIndex];
             packetCount = 0;  // 初始化包序号
             firstPacketTimeval = null;  // 初始化第一个包时间
             PacketListView.VirtualListSize = 0;  // 清除VirtualMode的计数否则会出问题
             PacketListView.Items.Clear();  // 确保清除了计数再清空项目渲染
             packetList = new List<PacketWrapper>();  // 然后再清除packetList
+            //清除GUI内容
+            hexRichTextbox.Text = "";
+            detailTreeview.Nodes.Clear();
+            CaptureFilterTextbox.Clear();
+            InterfaceComboBox.SelectedIndex = -1;
+        }
+
+        private void StartCapture(int interfaceIndex, bool promiscuousMode, string filter)
+        {
+            device = LibPcapLiveDeviceList.Instance[interfaceIndex];
+            // device = CaptureDeviceList.Instance[interfaceIndex];
+            SafelyClearPackets();
             readList = packetList;
 
             // 开启设备, 绑定事件
@@ -161,6 +173,7 @@ namespace NetHarbor
             StopCaptureButton.Enabled = true;
             InterfaceComboBox.Enabled = false;
             CaptureFilterTextbox.Enabled = false;
+            OpenPCAPButton.Enabled = false;
             this.Text = String.Format("NetHarbor 正在捕获, 设备 {0}", device.Description);
         }
 
@@ -224,11 +237,12 @@ namespace NetHarbor
                 StartCaptureButton.Enabled = true;
                 InterfaceComboBox.Enabled = true;
                 CaptureFilterTextbox.Enabled = true;
+                OpenPCAPButton.Enabled = true;
             }
         }
 
         // 包处理线程内容
-        private async void ConsumeBufferThreadOperation()
+        private void ConsumeBufferThreadOperation()
         {
             RawCapture raw;
             while (!stopConsumeBufferThread)
@@ -404,6 +418,68 @@ namespace NetHarbor
                 default:
                     return Color.FromArgb(255, 255, 255);
             }
+        }
+
+        private void OpenPCAPButton_Click(object sender, EventArgs e)
+        {
+            // 打开文件对话框
+            string selectedFilePath = "";
+            OpenFileDialog openFileDialog = new OpenFileDialog();
+            openFileDialog.Title = "选择PCAP文件";
+            openFileDialog.Filter = "所有文件|*.pcap";
+            // 如果用户点击了确定按钮
+            if (openFileDialog.ShowDialog() == DialogResult.OK)
+            {
+                // 获取用户选择的文件路径
+                selectedFilePath = openFileDialog.FileName;
+            }
+
+            ICaptureDevice device = new CaptureFileReaderDevice(selectedFilePath);
+
+            try
+            {
+                device.Open();
+            }
+            catch (Exception ex)
+            {
+                MsgBox.ShowError("打开PCAP包时发生错误: " + ex.Message);
+                return;
+            }
+
+            // 取一个路径, 写到GUI中
+            string fileName = Path.GetFileName(selectedFilePath);
+            this.Text = string.Format("NetHarbor PCAP文件: {0}", fileName);
+
+            // 加载没问题的话, 记得安全地清除已有的session
+            SafelyClearPackets();
+
+            readList = packetList;
+
+            // 持续读pcap文件, 加载
+            while (device.GetNextPacket(out var packetCapture) > 0)
+            {
+                RawCapture raw = packetCapture.GetPacket();
+                captureStatistics = packetCapture.Device.Statistics;
+                // 时间所限, 无法处理非Ethernet
+                if (raw.LinkLayerType != LinkLayers.Ethernet)
+                    continue;
+                packetCount++;
+                var packetWrapper = new PacketWrapper(packetCount, raw, firstPacketTimeval);
+                RoughParser.begin(packetWrapper);
+                packetList.Add(packetWrapper);
+                if (firstPacketTimeval == null && packetList.Count >= 1)
+                {
+                    firstPacketTimeval = packetList[0].Timeval;
+                }
+            }
+
+            if(device != null)
+            {
+                device.StopCapture();
+                device.Close();
+            }
+
+            MsgBox.ShowInfo(string.Format("{0} 加载完成! 已加载分组: {1}", fileName, packetCount));
         }
     }
 }

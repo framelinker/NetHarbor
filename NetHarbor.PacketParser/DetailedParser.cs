@@ -1,6 +1,9 @@
-﻿using System;
+﻿using PacketDotNet;
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Mime;
+using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -198,13 +201,13 @@ namespace NetHarbor.PacketParser
                     transmissionLayer.Nodes.Add(string.Format("代码(Code): {0} ({1})",
                         icmp.code, ProtocolVariable.GetICMPCode(icmp.type, icmp.code)));
                     transmissionLayer.Nodes.Add(string.Format("校验和: 0x{0:X4}", icmp.checksum));
-                    switch(icmp.type)
+                    switch (icmp.type)
                     {
                         case 0:
                         case 8:
-                            transmissionLayer.Nodes.Add(string.Format("Identifier: {0} (0x{0:X4})", 
+                            transmissionLayer.Nodes.Add(string.Format("Identifier: {0} (0x{0:X4})",
                                 Tools.NetworkToHost(icmp.identification)));
-                            transmissionLayer.Nodes.Add(string.Format("Sequence: {0} (0x{0:X4})", 
+                            transmissionLayer.Nodes.Add(string.Format("Sequence: {0} (0x{0:X4})",
                                 Tools.NetworkToHost(icmp.sequence)));
                             break;
                     }
@@ -278,37 +281,242 @@ namespace NetHarbor.PacketParser
                     applicationLayer.Nodes.Add(string.Format("Additional RRs: {0}", Tools.NetworkToHost(dns.additional)));
                     break;
                 case ApplicationLayerProtocol.TLS:
+                    int totalLength = pkt.TransmissionLayerPayloadLength;
                     applicationLayer = node.Add("Transport Layer Security");
-                    byte contentType = *ptr;
-                    ptr++;
-                    ushort* pointer = (ushort*)ptr;
-                    ushort version = Tools.NetworkToHost(*pointer);
-
-                    ptr += sizeof(ushort);
-                    pointer++;
-                    ushort length = Tools.NetworkToHost(*pointer);
-                    ptr += sizeof(ushort);
-
-                    TreeNode tls_node = applicationLayer.Nodes.Add(string.Format("{0} Record Layer: {1}",
-                        ProtocolVariable.GetTlsVersion(version), ProtocolVariable.GetTlsContentType(contentType)));
-
-                    tls_node.Nodes.Add(string.Format("Content Type: {0} ({1})",
-                        ProtocolVariable.GetTlsContentType(contentType), contentType));
-                    tls_node.Nodes.Add(string.Format("Version: {0} (0x{1:X4})",
-                        ProtocolVariable.GetTlsVersion(version), version));
-                    tls_node.Nodes.Add(string.Format("Length: {0}", length));
-
-                    switch (contentType)
+                    while(totalLength > 0)
                     {
-                        case 22:
-                            // Handshake, 读取handshake状态
-                            byte handshakeType = *ptr;
-                            ptr += 4;  // 跳过length
-                            tls_node.Nodes.Add(string.Format("Handshake Protocol: {0}", ProtocolVariable.GetTlsHandshakeType(handshakeType)));
-                            break;
+                        TLSHeader tls = *(TLSHeader*)ptr;
+                        ushort version = Tools.NetworkToHost(tls.version);
+                        ushort length = Tools.NetworkToHost(tls.length);
+                        // 一个新的根节点
+                        TreeNode tls_node = applicationLayer.Nodes.Add(string.Format("{0} Record Layer: {1}",
+                        ProtocolVariable.GetTlsVersion(version), ProtocolVariable.GetTlsRecordType(tls.recordType)));
+                        tls_node.Nodes.Add(string.Format("Content Type: {0} ({1})", ProtocolVariable.GetTlsRecordType(tls.recordType), tls.recordType));
+                        tls_node.Nodes.Add(string.Format("Version: {0} (0x{1:X4})", ProtocolVariable.GetTlsVersion(version), version));
+                        tls_node.Nodes.Add(string.Format("Length: {0}", length));
+                        // 读取基础信息后, 指针向后跳过struct部分
+                        ptr += sizeof(TLSHeader);
+                        switch (tls.recordType)
+                        {
+                            case 22:
+                                //为Handshake, 按照length读取Handshake信息
+                                TLSHandshakeHeader tlsHandshakeHeader = *(TLSHandshakeHeader*)ptr;
+                                ptr += sizeof(TLSHandshakeHeader);
+                                int handshakeLength = Tools.ThreeBytesNetworkPtrToInt(tlsHandshakeHeader.length, 0);
+                                TreeNode handshake_node = tls_node.Nodes.Add(string.Format("Handshake Protocol: {0}", ProtocolVariable.GetTlsHandshakeType(tlsHandshakeHeader.type)));
+                                TreeNode handshake_length_node = handshake_node.Nodes.Add(string.Format("Length: {0}", handshakeLength));
+                                switch(tlsHandshakeHeader.type)
+                                {
+                                    case 1:
+                                        // Client Hello
+                                        // 首先读取2B的Version
+                                        ushort detailedVersion = Tools.ReadUshortFromPtrAndToHostEndian(ptr);
+                                        ptr += 2;
+                                        handshake_node.Nodes.Add(string.Format("Version: {0} (0x{1:X4})",ProtocolVariable.GetTlsVersion(detailedVersion), detailedVersion));
+                                        // 读取Random 32B
+                                        byte[] randomByteArray = Tools.CopyFromPointer(ptr, 0, 32);
+                                        // Array.Reverse(randomByteArray);  // 解注释结果会不对
+                                        ptr += 32;
+                                        handshake_node.Nodes.Add(string.Format("Random: {0}", Tools.ConvertBytesArrayToHex(randomByteArray)));
+                                        // 读取sessionID, 字节数不等
+                                        byte sessionIDLength = *ptr;
+                                        ptr += 1;
+                                        byte[] sessionID = Tools.CopyFromPointer(ptr, 0, sessionIDLength);
+                                        ptr += sessionIDLength;
+                                        // Array.Reverse(sessionID);
+                                        handshake_node.Nodes.Add(string.Format("Session ID Length: {0}", sessionIDLength));
+                                        handshake_node.Nodes.Add(string.Format("Session ID: {0}", Tools.ConvertBytesArrayToHex(sessionID)));
+                                        // 读取Cipher Suites, 字节数不等
+                                        ushort cipherSuitesLength = Tools.ReadUshortFromPtrAndToHostEndian(ptr);
+                                        ptr += 2;
+                                        // Cipher Suites太多了, 先不做常量表了, 算个个数(2B每个suite), 后面再说
+                                        // TODO: 加入Cipher Suites常量表
+                                        handshake_node.Nodes.Add(string.Format("Cipher Suites Length: {0}", cipherSuitesLength));
+                                        TreeNode cipherSuites_node = handshake_node.Nodes.Add(string.Format("Cipher Suites ({0} suites)", cipherSuitesLength / 2));
+                                        ptr += cipherSuitesLength;
+                                        // 读取Compression Methods
+                                        byte compressionMethodsLength = *ptr;
+                                        ptr += 1;
+                                        handshake_node.Nodes.Add(string.Format("Compression Methods Length: {0}", compressionMethodsLength));
+                                        TreeNode compression_methods_node = handshake_node.Nodes.Add(string.Format("Compression Methods ({0} method)", compressionMethodsLength));
+                                        ptr += compressionMethodsLength;
+                                        // 所有Extensions的Length
+                                        ushort extensionsLength = Tools.ReadUshortFromPtrAndToHostEndian(ptr);
+                                        ptr += 2;
+                                        handshake_node.Nodes.Add(string.Format("Extensions Length: {0}", extensionsLength));
+                                        // 逐个读取
+                                        int remainExtensionsLength = extensionsLength;
+                                        while(remainExtensionsLength > 0)
+                                        {
+                                            // 单个的Extension
+                                            // Extension Type
+                                            ushort singleExtensionType = Tools.ReadUshortFromPtrAndToHostEndian(ptr);
+                                            ptr += 2;
+                                            remainExtensionsLength -= 2;
+                                            // Extension Length
+                                            ushort singleExtensionLength = Tools.ReadUshortFromPtrAndToHostEndian(ptr);
+                                            ptr += 2;
+                                            remainExtensionsLength -= 2;
+                                            // Extension Data Parser
+                                            TreeNode extension = handshake_node.Nodes.Add(string.Format("Extension: {0} (0x{1:X4}) len={2}", 
+                                                ProtocolVariable.GetTlsExtension(singleExtensionType), singleExtensionType, singleExtensionLength));
+                                            if (singleExtensionLength > 0)
+                                            {
+                                                // 记得传引用
+                                                ParseSingleExtension(singleExtensionType, singleExtensionLength, ref ptr, extension);
+                                            }
+                                            // 解析后要记得减去长度, 否则死循环
+                                            remainExtensionsLength -= singleExtensionLength;
+                                        }
+                                        break;
+                                    case 2:
+                                        // Server Hello
+                                        // Client Hello
+                                        // 首先读取2B的Version
+                                        detailedVersion = Tools.ReadUshortFromPtrAndToHostEndian(ptr);
+                                        ptr += 2;
+                                        handshake_node.Nodes.Add(string.Format("Version: {0} (0x{1:X4})", ProtocolVariable.GetTlsVersion(detailedVersion), detailedVersion));
+                                        // 读取Random 32B
+                                        randomByteArray = Tools.CopyFromPointer(ptr, 0, 32);
+                                        // Array.Reverse(randomByteArray);  // 解注释结果会不对
+                                        ptr += 32;
+                                        handshake_node.Nodes.Add(string.Format("Random: {0}", Tools.ConvertBytesArrayToHex(randomByteArray)));
+                                        // 读取sessionID, 字节数不等
+                                        sessionIDLength = *ptr;
+                                        ptr += 1;
+                                        sessionID = Tools.CopyFromPointer(ptr, 0, sessionIDLength);
+                                        ptr += sessionIDLength;
+                                        // Array.Reverse(sessionID);
+                                        handshake_node.Nodes.Add(string.Format("Session ID Length: {0}", sessionIDLength));
+                                        handshake_node.Nodes.Add(string.Format("Session ID: {0}", Tools.ConvertBytesArrayToHex(sessionID)));
+                                        // 读取Cipher Suites, 2B
+                                        ushort cipherSuites = Tools.ReadUshortFromPtrAndToHostEndian(ptr);
+                                        ptr += 2;
+                                        handshake_node.Nodes.Add(string.Format("Cipher Suite: (0x{0:X4})", cipherSuites));
+                                        // 读取Compression Method
+                                        byte compressionMethod = *ptr;
+                                        ptr += 1;
+                                        handshake_node.Nodes.Add(string.Format("Compression Method: ({0})", compressionMethod));
+                                        // 所有Extensions的Length
+                                        extensionsLength = Tools.ReadUshortFromPtrAndToHostEndian(ptr);
+                                        ptr += 2;
+                                        handshake_node.Nodes.Add(string.Format("Extensions Length: {0}", extensionsLength));
+                                        // 逐个读取
+                                        remainExtensionsLength = extensionsLength;
+                                        while (remainExtensionsLength > 0)
+                                        {
+                                            // 单个的Extension
+                                            // Extension Type
+                                            ushort singleExtensionType = Tools.ReadUshortFromPtrAndToHostEndian(ptr);
+                                            ptr += 2;
+                                            remainExtensionsLength -= 2;
+                                            // Extension Length
+                                            ushort singleExtensionLength = Tools.ReadUshortFromPtrAndToHostEndian(ptr);
+                                            ptr += 2;
+                                            remainExtensionsLength -= 2;
+                                            // Extension Data Parser
+                                            TreeNode extension = handshake_node.Nodes.Add(string.Format("Extension: {0} (0x{1:X4}) len={2}",
+                                                ProtocolVariable.GetTlsExtension(singleExtensionType), singleExtensionType, singleExtensionLength));
+                                            if (singleExtensionLength > 0)
+                                            {
+                                                // 记得传引用
+                                                ParseSingleExtension(singleExtensionType, singleExtensionLength, ref ptr, extension);
+                                            }
+                                            // 解析后要记得减去长度, 否则死循环
+                                            remainExtensionsLength -= singleExtensionLength;
+                                        }
+                                        break;
+                                    /*case 11:
+                                        // Certificate
+                                        break;
+                                    case 12:
+                                        // Server Key Exchange
+                                        break;
+                                    case 14:
+                                        // Server Hello Done
+                                        break;
+                                    case 16:
+                                        // Client Key Exchange
+                                        break;*/
+                                    default:
+                                        // 未知/其他Handshake
+                                        if (ProtocolVariable.GetTlsHandshakeType(tlsHandshakeHeader.type).Length <= 0)
+                                        {
+                                            handshake_node.Text += "UNKNOWN (Maybe Encrypted Handshake Message)";
+                                            handshake_length_node.Remove();
+                                        }
+                                        // 指针跳过这部分无法解析的区域
+                                        ptr += handshakeLength;
+                                        break;
+                                }
+                                break;
+                            case 20:
+                                // Change Cipher Spec
+                                byte message = *ptr;
+                                ptr += length;
+                                tls_node.Nodes.Add(string.Format("Change Cipher Spec Message: {0}", message));
+                                break;
+                            /*case 23:
+                                // Application Data
+                                break;*/
+                            default:
+                                // 指针跳过这部分无法解析的区域
+                                ptr += length;
+                                break;
+                        }
+                        // 扣减掉本部分header与length后继续读取
+                        totalLength -= sizeof(TLSHeader);
+                        totalLength -= length;
                     }
                     break;
             }
         }
+
+
+        // 记得传指针引用
+        public unsafe static void ParseSingleExtension(ushort type, ushort length, ref byte* ptr, TreeNode node)
+        {
+            
+            switch (type)
+            {
+                case 0:
+                    // server_name
+                    ushort nameListLength = Tools.ReadUshortFromPtrAndToHostEndian(ptr);
+                    ptr += 2;
+                    node.Nodes.Add(string.Format("Server Name list length: {0}", nameListLength));
+                    int remainLength = nameListLength;
+                    while(remainLength > 0)
+                    {
+                        byte nameType = *ptr;
+                        ptr++;
+                        remainLength--;
+                        
+                        ushort nameLength = Tools.ReadUshortFromPtrAndToHostEndian(ptr);
+                        ptr += 2;
+                        remainLength -= 2;
+                        string nameStr = "";
+                        TreeNode extNode = node.Nodes.Add(string.Format("Server Name: {0} ({1})", ProtocolVariable.GetTlsServerNameType(nameType), nameType));
+                        extNode.Nodes.Add(string.Format("Server Name Type: {0} ({1})", ProtocolVariable.GetTlsServerNameType(nameType), nameType));
+                        extNode.Nodes.Add(string.Format("Server Name Length: {0}", nameLength));
+                        if (nameLength > 0)
+                        {
+                            byte[] name = Tools.CopyFromPointer(ptr, 0, nameLength);
+                            ptr += nameLength;
+                            //Array.Reverse(name);
+                            nameStr = Encoding.UTF8.GetString(name);
+                            extNode.Nodes.Add(string.Format("Server Name: {0}", nameStr));
+                            extNode.Text += (" " + nameStr);
+                            node.Text += (" " + nameStr);
+                        }
+                        remainLength -= nameLength;
+                    }
+                    break;
+                default:
+                    // 跳过此区域
+                    ptr += length;
+                    break;
+            }
+        }
+
     }
 }
